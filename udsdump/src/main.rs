@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     let program: &mut KProbe = ebpf.program_mut("udsdump").unwrap().try_into()?;
     program.load()?;
     program.attach("unix_stream_sendmsg", 0)?;
+    program.attach("unix_dgram_sendmsg", 0)?;
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
