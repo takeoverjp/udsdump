@@ -3,7 +3,7 @@
 
 use aya_ebpf::{macros::kprobe, programs::ProbeContext};
 use aya_log_ebpf::info;
-use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid};
+use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_probe_read_user};
 
 #[kprobe]
 pub fn udsdump(ctx: ProbeContext) -> u32 {
@@ -18,7 +18,12 @@ fn try_udsdump(ctx: ProbeContext) -> Result<u32, u32> {
     let comm = bpf_get_current_comm().map_err(|_| 1u32)?;
     let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
     let pid = bpf_get_current_pid_tgid() >> 32;
-    info!(&ctx, "command name: {}, pid: {}", comm_str, pid);
+
+    // メッセージサイズを取得
+    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(1u32)? };
+
+    info!(&ctx, "command name: {}, pid: {}, msg_len: {}", 
+          comm_str, pid, msg_len);
     Ok(0)
 }
 
