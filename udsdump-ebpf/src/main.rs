@@ -3,6 +3,7 @@
 
 use aya_ebpf::{macros::kprobe, programs::ProbeContext};
 use aya_log_ebpf::info;
+use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid};
 
 #[kprobe]
 pub fn udsdump(ctx: ProbeContext) -> u32 {
@@ -13,7 +14,11 @@ pub fn udsdump(ctx: ProbeContext) -> u32 {
 }
 
 fn try_udsdump(ctx: ProbeContext) -> Result<u32, u32> {
-    info!(&ctx, "kprobe called");
+    info!(&ctx, "unix_xxx_sendmsg called");
+    let comm = bpf_get_current_comm().map_err(|_| 1u32)?;
+    let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
+    let pid = bpf_get_current_pid_tgid() >> 32;
+    info!(&ctx, "command name: {}, pid: {}", comm_str, pid);
     Ok(0)
 }
 
