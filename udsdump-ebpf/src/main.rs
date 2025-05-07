@@ -3,100 +3,66 @@
 
 use aya_ebpf::{macros::kprobe, programs::ProbeContext};
 use aya_log_ebpf::info;
-use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_probe_read_user};
+use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_probe_read_user, bpf_probe_read_user_str_bytes};
 
 #[kprobe]
 pub fn udsdump(ctx: ProbeContext) -> u32 {
-    match try_udsdump(ctx) {
-        Ok(ret) => ret,
-        Err(ret) => ret,
+    match unsafe {try_unix_stream_sendmsg(ctx)} {
+        Ok(ret) => 0,
+        Err(ret) => 1,
     }
 }
 
-fn try_udsdump(ctx: ProbeContext) -> Result<u32, u32> {
-    // ソケットのアドレス情報を取得
-    let sock: *const u8 = unsafe { ctx.arg(0).ok_or(1u32)? };
-    let msg: *const u8 = unsafe { ctx.arg(1).ok_or(1u32)? };
+#[repr(C)]
+pub struct Iovec {
+    pub iov_base: *mut core::ffi::c_void,
+    pub iov_len: usize,
+}
 
-    // ソケットのパス名を取得
-    let unix_sock = unsafe { bpf_probe_read_user(sock as *const u8).map_err(|_| 1u32)? };
-    let addr = unsafe { bpf_probe_read_user((unix_sock as *const u8).offset(8)).map_err(|_| 1u32)? };
-    
-    // パス名の長さをチェック
-    let addr_len = unsafe { bpf_probe_read_user(addr as *const u32).map_err(|_| 1u32)? };
-    if addr_len > 0 {
-        let sock_path = unsafe { bpf_probe_read_user((addr as *const u8).offset(16)).map_err(|_| 1u32)? };
-        
-        // 抽象ソケットの場合は先頭の\0をスキップ
-        let path_offset = if sock_path == 0 { 1 } else { 0 };
-        // let mut path = [0u8; 108]; // UNIX_PATH_MAX
-        // unsafe {
-        //     if addr_len > 0 {
-        //         let path_ptr = (sock_path as *const u8).offset(path_offset);
-        //         let mut i = 0;
-        //         while i < 108 && i < addr_len as usize {
-        //             if let Ok(byte) = bpf_probe_read_user(path_ptr.add(i) as *const u8) {
-        //                 path[i] = byte;
-        //                 if byte == 0 {
-        //                     break;
-        //                 }
-        //             } else {
-        //                 break;
-        //             }
-        //             i += 1;
-        //         }
-        //     }
-        // };
-        // info!(&ctx, "path: {}", core::str::from_utf8(&path).unwrap_or("invalid utf8"));
-    }
+#[repr(C)]
+pub struct Msghdr {
+    pub msg_name: *mut core::ffi::c_void, // 送信先アドレス
+    pub msg_namelen: u32,                 // msg_name のサイズ
+    pub msg_iov: *mut Iovec,              // データ本体へのポインタ
+    pub msg_iovlen: usize,                // iovec の数
+    pub msg_control: *mut core::ffi::c_void, // control data (ancillary data)
+    pub msg_controllen: usize,
+    pub msg_flags: u32,
+}
 
-    // // ピアのアドレス情報も同様に取得
-    // let peer = unsafe { bpf_probe_read_user((unix_sock as *const u8).offset(16)).map_err(|_| 1u32)? };
-    // let peer_addr = unsafe { bpf_probe_read_user((peer as *const u8).offset(8)).map_err(|_| 1u32)? };
+#[repr(C)]
+struct SockaddrUn {
+    sun_family: u16,
+    sun_path: [u8; 108],
+}
 
-    // let peer_addr_len = unsafe { bpf_probe_read_user(peer_addr as *const u32).map_err(|_| 1u32)? };
-    // if peer_addr_len > 0 {
-    //     let peer_sock_path = unsafe { bpf_probe_read_user((peer_addr as *const u8).offset(16)).map_err(|_| 1u32)? };
-        
-    //     let peer_path_offset = if peer_sock_path == 0 { 1 } else { 0 };
-    //     let peer_path = unsafe {
-    //         bpf_probe_read_user(
-    //             (peer_sock_path as *const u8).offset(peer_path_offset)
-    //         ).map_err(|_| 1u32)?
-    //     };
-    // }
+unsafe fn try_unix_stream_sendmsg(ctx: ProbeContext) -> Result<(), ()> {
+    let msg_ptr: *const u8 = ctx.arg(1).ok_or(())?;
+    let msg_ptr = msg_ptr as *const Msghdr;
 
-    // // メッセージの内容を取得
-    // let msg_iter = unsafe { bpf_probe_read_user((msg as *const u8).offset(32)).map_err(|_| 1u32)? };
-    // let iter_type = unsafe { bpf_probe_read_user(msg_iter as *const u32).map_err(|_| 1u32)? };
-    // let iov_offset = unsafe { bpf_probe_read_user((msg_iter as *const u8).offset(8)).map_err(|_| 1u32)? };
+    // Read msg_name pointer
+    let name_ptr: *const SockaddrUn = core::ptr::read(msg_ptr).msg_name as *const SockaddrUn;
 
-    // if iter_type == 0 && iov_offset == 0 { // ITER_IOVEC && offset == 0
-    //     let nr_segs = unsafe { bpf_probe_read_user((msg_iter as *const u8).offset(16)).map_err(|_| 1u32)? };
-    //     let iov = unsafe { bpf_probe_read_user((msg_iter as *const u8).offset(24)).map_err(|_| 1u32)? };
+    // Read sockaddr_un from user memory
+    // let sockaddr: SockaddrUn = bpf_probe_read_user(name_ptr).map_err(|_| ())?;
 
-    //     for i in 0..nr_segs.min(8) { // SS_MAX_SEGS_PER_MSG = 8
-    //         let iov_base = unsafe { bpf_probe_read_user((iov as *const u8).offset((i * 16) as isize)).map_err(|_| 1u32)? };
-    //         let iov_len = unsafe { bpf_probe_read_user((iov as *const u8).offset((i * 16 + 8) as isize)).map_err(|_| 1u32)? };
+    // Convert sun_path to str
+    // let path_len = sockaddr.sun_path.iter().position(|&c| c == 0).unwrap_or(108);
+    // let sun_path = &sockaddr.sun_path[..path_len];
 
-    //         let data = unsafe {
-    //             bpf_probe_read_user(
-    //                 iov_base as *const u8
-    //             ).map_err(|_| 1u32)?
-    //         };
-    //     }
-    // }
+    // info!(&ctx, "sendmsg to {:?}", sun_path);
+
     info!(&ctx, "unix_xxx_sendmsg called");
-    let comm = bpf_get_current_comm().map_err(|_| 1u32)?;
+    let comm = bpf_get_current_comm().map_err(|_| ())?;
     let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
     let pid = bpf_get_current_pid_tgid() >> 32;
 
     // メッセージサイズを取得
-    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(1u32)? };
+    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(())? };
 
     info!(&ctx, "command name: {}, pid: {}, msg_len: {}", 
           comm_str, pid, msg_len);
-    Ok(0)
+    Ok(())
 }
 
 #[cfg(not(test))]
