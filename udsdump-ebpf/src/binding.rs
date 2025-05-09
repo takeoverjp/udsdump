@@ -39194,6 +39194,58 @@ pub struct udp_hslot {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct sockaddr_un {
+    pub sun_family: __kernel_sa_family_t,
+    pub sun_path: [::aya_ebpf::cty::c_char; 108usize],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct unix_address {
+    pub refcnt: refcount_t,
+    pub len: ::aya_ebpf::cty::c_int,
+    pub hash: ::aya_ebpf::cty::c_uint,
+    pub name: __IncompleteArrayField<sockaddr_un>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct scm_stat {
+    pub nr_fds: atomic_t,
+}
+#[repr(C)]
+pub struct unix_sock {
+    pub sk: sock,
+    pub addr: *mut unix_address,
+    pub path: path,
+    pub iolock: mutex,
+    pub bindlock: mutex,
+    pub peer: *mut sock,
+    pub link: list_head,
+    pub inflight: ::aya_ebpf::cty::c_ulong,
+    pub lock: spinlock_t,
+    pub gc_flags: ::aya_ebpf::cty::c_ulong,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 24usize]>,
+    pub peer_wq: socket_wq,
+    pub peer_wake: wait_queue_entry_t,
+    pub scm_stat: scm_stat,
+    pub oob_skb: *mut sk_buff,
+    pub _bitfield_align_2: [u8; 0],
+    pub _bitfield_2: __BindgenBitfieldUnit<[u8; 8usize]>,
+}
+impl unix_sock {
+    #[inline]
+    pub fn new_bitfield_1() -> __BindgenBitfieldUnit<[u8; 24usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 24usize]> = Default::default();
+        __bindgen_bitfield_unit
+    }
+    #[inline]
+    pub fn new_bitfield_2() -> __BindgenBitfieldUnit<[u8; 8usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 8usize]> = Default::default();
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct rtattr {
     pub rta_len: ::aya_ebpf::cty::c_ushort,
     pub rta_type: ::aya_ebpf::cty::c_ushort,
