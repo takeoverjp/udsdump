@@ -1,33 +1,21 @@
 #![no_std]
 #![no_main]
 
+mod binding;
+
+use crate::binding::{sock, socket, unix_sock, unix_address, sockaddr_un, __IncompleteArrayField};
+
+use aya_ebpf::bindings::path;
+use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_probe_read_kernel, bpf_probe_read_kernel_str_bytes};
 use aya_ebpf::{macros::kprobe, programs::ProbeContext};
 use aya_log_ebpf::info;
-use aya_ebpf::helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_probe_read_user, bpf_probe_read_user_str_bytes};
 
 #[kprobe]
 pub fn udsdump(ctx: ProbeContext) -> u32 {
-    match unsafe {try_unix_stream_sendmsg(ctx)} {
-        Ok(ret) => 0,
-        Err(ret) => 1,
+    match unsafe { try_unix_stream_sendmsg(ctx) } {
+        Ok(ret) => ret,
+        Err(ret) => ret.try_into().unwrap_or(1),
     }
-}
-
-#[repr(C)]
-pub struct Iovec {
-    pub iov_base: *mut core::ffi::c_void,
-    pub iov_len: usize,
-}
-
-#[repr(C)]
-pub struct Msghdr {
-    pub msg_name: *mut core::ffi::c_void, // 送信先アドレス
-    pub msg_namelen: u32,                 // msg_name のサイズ
-    pub msg_iov: *mut Iovec,              // データ本体へのポインタ
-    pub msg_iovlen: usize,                // iovec の数
-    pub msg_control: *mut core::ffi::c_void, // control data (ancillary data)
-    pub msg_controllen: usize,
-    pub msg_flags: u32,
 }
 
 #[repr(C)]
@@ -36,33 +24,41 @@ struct SockaddrUn {
     sun_path: [u8; 108],
 }
 
-unsafe fn try_unix_stream_sendmsg(ctx: ProbeContext) -> Result<(), ()> {
-    let msg_ptr: *const u8 = ctx.arg(1).ok_or(())?;
-    let msg_ptr = msg_ptr as *const Msghdr;
-
-    // Read msg_name pointer
-    let name_ptr: *const SockaddrUn = core::ptr::read(msg_ptr).msg_name as *const SockaddrUn;
-
-    // Read sockaddr_un from user memory
-    // let sockaddr: SockaddrUn = bpf_probe_read_user(name_ptr).map_err(|_| ())?;
-
-    // Convert sun_path to str
-    // let path_len = sockaddr.sun_path.iter().position(|&c| c == 0).unwrap_or(108);
-    // let sun_path = &sockaddr.sun_path[..path_len];
-
-    // info!(&ctx, "sendmsg to {:?}", sun_path);
-
+unsafe fn try_unix_stream_sendmsg(ctx: ProbeContext) -> Result<u32, i64> {
     info!(&ctx, "unix_xxx_sendmsg called");
-    let comm = bpf_get_current_comm().map_err(|_| ())?;
+
+    // Get socket path    
+    let sock_: *const u8 = ctx.arg(0).ok_or(1i64)?;
+    let sock_ = sock_ as *const socket;
+    let sk =
+        unsafe { bpf_probe_read_kernel(&(*sock_).sk as *const *mut sock) }? as *const unix_sock;
+    let addr = unsafe { bpf_probe_read_kernel(&(*sk).addr as *const *mut unix_address) }?
+        as *const unix_address;
+    let addr_len =
+        unsafe { bpf_probe_read_kernel(&(*addr).len as *const i32) }?;
+    info!(&ctx, "sock->sk->addr->len: {}", addr_len);
+    let addr_path =
+        unsafe { bpf_probe_read_kernel(&(*addr).name as *const __IncompleteArrayField<sockaddr_un>) }?;
+    let addr_path = addr_path.as_ptr() as *const sockaddr_un;
+   let path_ = unsafe { bpf_probe_read_kernel(&(*addr_path).sun_path as *const [::aya_ebpf::cty::c_char; 108usize]) }?;
+   let path_ptr = path_.as_ptr() as *const u8;
+   let mut buf: [u8; 108] = [0; 108];
+    let path_str = unsafe { bpf_probe_read_kernel_str_bytes(path_ptr, &mut buf)? };
+    let path_str = core::str::from_utf8_unchecked(&buf);
+    info!(&ctx, "sock->sk->addr->name: {}, {:x}, {:x}, {:x}", path_str, path_[0], path_[1], path_[2]);
+
+    let comm = bpf_get_current_comm().map_err(|_| 2i64)?;
     let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
     let pid = bpf_get_current_pid_tgid() >> 32;
 
-    // メッセージサイズを取得
-    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(())? };
+    // Get message length
+    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(3i64)? };
 
-    info!(&ctx, "command name: {}, pid: {}, msg_len: {}", 
-          comm_str, pid, msg_len);
-    Ok(())
+    info!(
+        &ctx,
+        "command name: {}, pid: {}, msg_len: {}", comm_str, pid, msg_len
+    );
+    Ok(0)
 }
 
 #[cfg(not(test))]
