@@ -8,6 +8,7 @@
 1. (if cross-compiling) LLVM: (e.g.) `brew install llvm` (on macOS)
 1. (if cross-compiling) C toolchain: (e.g.) [`brew install filosottile/musl-cross/musl-cross`](https://github.com/FiloSottile/homebrew-musl-cross) (on macOS)
 1. bpf-linker: `cargo install bpf-linker` (`--no-default-features` on macOS)
+1. aya-tool: `cargo install bindgen-cli && cargo install --git https://github.com/aya-rs/aya -- aya-tool`
 
 ## Build & Run
 
