@@ -40,24 +40,25 @@ unsafe fn try_unix_stream_sendmsg(ctx: ProbeContext) -> Result<u32, i64> {
     let addr_path =
         unsafe { bpf_probe_read_kernel(&(*addr).name as *const __IncompleteArrayField<sockaddr_un>) }?;
     let addr_path = addr_path.as_ptr() as *const sockaddr_un;
-   let path_ = unsafe { bpf_probe_read_kernel(&(*addr_path).sun_path as *const [::aya_ebpf::cty::c_char; 108usize]) }?;
-   let path_ptr = path_.as_ptr() as *const u8;
-   let mut buf: [u8; 108] = [0; 108];
-    let path_str = unsafe { bpf_probe_read_kernel_str_bytes(path_ptr, &mut buf)? };
+   
+    let path_ = unsafe { bpf_probe_read_kernel(&(*addr_path).sun_path as *const [::aya_ebpf::cty::c_char; 108usize]) }?;
+    let path_ptr = path_.as_ptr() as *const u8;
+    let mut buf = [0u8; 108];
+    unsafe { bpf_probe_read_kernel_str_bytes(path_ptr, &mut buf)? };
     let path_str = core::str::from_utf8_unchecked(&buf);
     info!(&ctx, "sock->sk->addr->name: {}, {:x}, {:x}, {:x}", path_str, path_[0], path_[1], path_[2]);
 
-    let comm = bpf_get_current_comm().map_err(|_| 2i64)?;
-    let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
-    let pid = bpf_get_current_pid_tgid() >> 32;
+    // let comm = bpf_get_current_comm().map_err(|_| 2i64)?;
+    // let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
+    // let pid = bpf_get_current_pid_tgid() >> 32;
 
-    // Get message length
-    let msg_len: u64 = unsafe { ctx.arg(2).ok_or(3i64)? };
+    // // Get message length
+    // let msg_len: u64 = unsafe { ctx.arg(2).ok_or(3i64)? };
 
-    info!(
-        &ctx,
-        "command name: {}, pid: {}, msg_len: {}", comm_str, pid, msg_len
-    );
+    // info!(
+    //     &ctx,
+    //     "command name: {}, pid: {}, msg_len: {}", comm_str, pid, msg_len
+    // );
     Ok(0)
 }
 
