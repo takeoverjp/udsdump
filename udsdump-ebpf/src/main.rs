@@ -37,16 +37,20 @@ unsafe fn try_unix_stream_sendmsg(ctx: ProbeContext) -> Result<u32, i64> {
     let addr_len =
         unsafe { bpf_probe_read_kernel(&(*addr).len as *const i32) }?;
     info!(&ctx, "sock->sk->addr->len: {}", addr_len);
-    let addr_path =
+
+    if addr_len > 0{
+        let addr_path =
         unsafe { bpf_probe_read_kernel(&(*addr).name as *const __IncompleteArrayField<sockaddr_un>) }?;
-    let addr_path = addr_path.as_ptr() as *const sockaddr_un;
-   
-    let path_ = unsafe { bpf_probe_read_kernel(&(*addr_path).sun_path as *const [::aya_ebpf::cty::c_char; 108usize]) }?;
-    let path_ptr = path_.as_ptr() as *const u8;
-    let mut buf = [0u8; 108];
-    unsafe { bpf_probe_read_kernel_str_bytes(path_ptr, &mut buf)? };
-    let path_str = core::str::from_utf8_unchecked(&buf);
-    info!(&ctx, "sock->sk->addr->name: {}, {:x}, {:x}, {:x}", path_str, path_[0], path_[1], path_[2]);
+        let addr_path = addr_path.as_ptr() as *const sockaddr_un;
+
+        let path_ = unsafe { bpf_probe_read_kernel(&(*addr_path).sun_path as *const [::aya_ebpf::cty::c_char; 108usize]) }?;
+        let path_ptr = path_.as_ptr() as *const u8;
+        let mut buf = [0u8; 108];
+        unsafe { bpf_probe_read_kernel_str_bytes(path_ptr, &mut buf)? };
+        let path_str = core::str::from_utf8_unchecked(&buf);
+        info!(&ctx, "sock->sk->addr->sun_path: {}, {:x}, {:x}, {:x}", path_str, path_[0], path_[1], path_[2]);
+    
+    }
 
     // let comm = bpf_get_current_comm().map_err(|_| 2i64)?;
     // let comm_str = unsafe { core::str::from_utf8_unchecked(&comm) };
